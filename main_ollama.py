@@ -8,7 +8,16 @@ from langgraph.graph.message import add_messages
 from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import InMemorySaver
 from osm_api import get_tourist_places_osm_by_name
+from typing import Iterator, Dict, Any
+from groq import Groq
+import os
+from dotenv import load_dotenv
+load_dotenv()
 # Load Gemma 2 from Hugging Face
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+client = Groq(api_key=GROQ_API_KEY)
 
 class AgentState(TypedDict):
     messages : Annotated[Sequence[BaseMessage],add_messages]
@@ -72,12 +81,42 @@ memory = InMemorySaver()
 config = {"configurable": {"thread_id" : "1"}}
 app = graph.compile(checkpointer=memory)
 
+def search(query:str,stream=True):
+    completion = client.chat.completions.create(
+    model="llama-3.1-8b-instant",
+    messages=[
+        {"role": "user",
+        "content": query}
+    ],
+    temperature=1,
+    max_completion_tokens=1024,
+    top_p=1,
+    # reasoning_effort="medium",
+    stream=True,
+    stop=None
+)
+    
+    if stream:
+        for chunk in completion:
+            token = chunk.choices[0].delta.content or ""
+            if token.strip():
+                yield token
+        return
 
-while True:
+    else:
+        complete_answer=""
+    
+        for chunk in completion:
+            complete_answer += chunk.choices[0].delta.content or "" + "\n"
+
+        return complete_answer
+    
+
+if __name__ == "__main__":
     print("\n\n----------------------------")
     user_input = input("Ask your question (or 'exit' to quit): ")
     if user_input.lower() == 'exit':
-        break
+        exit()
     inputs = {"messages": [{"role" : "user" , "content" : user_input}]}
     events = app.stream(inputs,
                         config,
